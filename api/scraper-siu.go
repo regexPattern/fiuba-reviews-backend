@@ -26,6 +26,11 @@ const NOMBRE_BUCKET string = "fiuba-reviews-scraper-siu"
 func HandlerScraper(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	defer r.Body.Close()
 
 	data, err := io.ReadAll(r.Body)
