@@ -9,7 +9,7 @@ import (
 )
 
 // Se utilizaron los regexes de FIUBA Plan como inspiración: https://github.com/FdelMazo/FIUBA-Plan/blob/master/src/siuparser.js
-var reCarrera *regexp.Regexp = regexp.MustCompile(`Propuesta: ([a-záéíóúñA-ZÁÉÍÓÚÑ ]+)`) // https://regex101.com/r/cfElw2/2
+var reCarrera *regexp.Regexp = regexp.MustCompile(`Propuesta: ([a-záéíóúñA-ZÁÉÍÓÚÑ ]+)`)                                                    // https://regex101.com/r/cfElw2/2
 var reCuatri *regexp.Regexp = regexp.MustCompile(`Período lectivo: (\d{4}) - (\d).*`)                                                       // https://regex101.com/r/b4DVgP/1
 var reMateria *regexp.Regexp = regexp.MustCompile(`Actividad: ([^\s\(]+(?:\s[^\s\(]+)*)\s?\(([^\)]+)\)`)                                    // https://regex101.com/r/L7SlFt/2
 var reCatedra *regexp.Regexp = regexp.MustCompile(`(?i)Comisión: (?:(?:CURSO:? ?)?(\d{1,2})([a-cA-C])?|CURSO:? ?([a-záéíóúñA-ZÁÉÍÓÚÑ ]+))`) // https://regex101.com/r/oli0zO/2
@@ -21,8 +21,8 @@ type MetaData struct {
 }
 
 type Cuatri struct {
-	Anio   int
 	Numero int
+	Anio   int
 
 	// Texto plano que contiene la información de las materias de cada
 	// cuatrimestre. Esto se hace ya que solo nos interesa parsear las materias
@@ -132,7 +132,11 @@ func obtenerCuatris(contenidoSiu string) []Cuatri {
 		// El regex matchea un solo dígito directamente.
 		numero := int(numeroStr[0]) - '0'
 
-		cuatris = append(cuatris, Cuatri{anio, numero, contenidoSiu[inicio:fin]})
+		cuatris = append(cuatris, Cuatri{
+			Numero:    numero,
+			Anio:      anio,
+			Contenido: contenidoSiu[inicio:fin],
+		})
 	}
 
 	By(func(p1, p2 *Cuatri) bool {
