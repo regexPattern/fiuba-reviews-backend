@@ -36,12 +36,15 @@ type cuatri struct {
 	Anio   int `json:"anio"`
 }
 
+func init() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelInfo,
+	})))
+}
+
 func HandlerScraperSiu(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	})))
 
 	switch r.Method {
 	case "GET":
@@ -92,24 +95,28 @@ func handlerGet(ctx context.Context, w http.ResponseWriter) {
 	for _, obj := range bucket.Contents {
 		objLogger := slog.Default().With("objKey", obj.Key)
 
-		objData, err := client.GetObject(ctx, &s3.GetObjectInput{
+		objHead, err := client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: aws.String(BUCKET),
 			Key:    obj.Key,
 		})
 
 		if err != nil {
-			objLogger.Error(
-				"Error obteniendo object del bucket.",
-				"err", err.Error(),
-			)
+			objLogger.Error(err.Error())
 
-			break
+			w.WriteHeader(http.StatusInternalServerError)
+
+			_, err := w.Write([]byte("Error interno al obtener planes existentes."))
+			if err != nil {
+				slog.Error(err.Error())
+			}
+
+			return
 		}
 
-		defer objData.Body.Close()
-
-		plan, err := parsearPlan(objData, objLogger)
+		plan, err := parsearMetaDataPlan(objHead)
 		if err != nil {
+			objLogger.Error(err.Error())
+
 			w.WriteHeader(http.StatusInternalServerError)
 
 			_, err := w.Write([]byte(err.Error()))
@@ -126,7 +133,14 @@ func handlerGet(ctx context.Context, w http.ResponseWriter) {
 	planesJson, err := json.Marshal(planes)
 	if err != nil {
 		slog.Error(err.Error())
+
 		w.WriteHeader(http.StatusInternalServerError)
+
+		_, err = w.Write([]byte("Error interno serializando respuesta."))
+		if err != nil {
+			slog.Error(err.Error())
+		}
+
 		return
 	}
 
@@ -143,13 +157,21 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		slog.Error(err.Error())
+
 		w.WriteHeader(http.StatusInternalServerError)
+
+		_, err := w.Write([]byte("Error interno conectando con la base de datos."))
+		if err != nil {
+			slog.Error(err.Error())
+		}
+
 		return
 	}
 
 	client := s3.NewFromConfig(cfg)
 
 	defer r.Body.Close()
+
 	contenidoSiu, err := io.ReadAll(r.Body)
 
 	if err != nil {
@@ -167,13 +189,6 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 	meta, err := scraper_siu.ObtenerMetaData(string(contenidoSiu))
 
-	slog.Debug(
-		"Obtenidos metadatos del contenido del SIU.",
-		"carrera", meta.Carrera,
-		"cuatri-numero", meta.Cuatri.Numero,
-		"cuatri-anio", meta.Cuatri.Anio,
-	)
-
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, err := w.Write([]byte(err.Error()))
@@ -189,6 +204,8 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	objBody, err := json.Marshal(materias)
 
 	if err != nil {
+		slog.Error(err.Error())
+
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Error interno serializando información scrapeada."))
 
@@ -218,9 +235,7 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	// Más información: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html#UserMetadata
 	carreraB64 := base64.StdEncoding.EncodeToString([]byte(meta.Carrera))
 
-	slog.Info(fmt.Sprintf("Encodeado nombre de la carrera en base64: '%v'.", carrera))
-
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+	obj := &s3.PutObjectInput{
 		Bucket:          aws.String(BUCKET),
 		Key:             aws.String(objKey),
 		ContentType:     aws.String("application/json"),
@@ -231,13 +246,20 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 			"cuatri-anio":   strconv.Itoa(meta.Cuatri.Anio),
 		},
 		Body: bytes.NewReader(objBody),
-	})
+	}
+
+	if yaExiste, err := planYaExiste(ctx, client, obj); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	} else if yaExiste {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	_, err = client.PutObject(ctx, obj)
 
 	if err != nil {
-		slog.Error(
-			"Error escribiendo los objects al bucket.",
-			"err", err.Error(),
-		)
+		slog.Error(err.Error())
 
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Error interno almacenando la información."))
@@ -249,19 +271,19 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info(fmt.Sprintf("Escrito archivo '%v' con éxito.", objKey))
-
 	w.WriteHeader(http.StatusCreated)
+
+	slog.Info(fmt.Sprintf("Escrito archivo '%v' con éxito.", objKey))
 }
 
-func parsearPlan(objData *s3.GetObjectOutput, objLogger *slog.Logger) (*plan, error) {
-	var err error
-
-	meta := objData.Metadata
+func parsearMetaDataPlan(objHead *s3.HeadObjectOutput) (*plan, error) {
+	meta := objHead.Metadata
 
 	carreraB64, okCarrera := meta["carrera"]
 	numeroStr, okNum := meta["cuatri-numero"]
 	anioStr, okAnio := meta["cuatri-anio"]
+
+	var err error
 
 	if !okCarrera {
 		err = fmt.Errorf("Metadato 'carrera' no encontrado.")
@@ -272,7 +294,6 @@ func parsearPlan(objData *s3.GetObjectOutput, objLogger *slog.Logger) (*plan, er
 	}
 
 	if err != nil {
-		objLogger.Error(err.Error())
 		return nil, err
 	}
 
@@ -289,7 +310,6 @@ func parsearPlan(objData *s3.GetObjectOutput, objLogger *slog.Logger) (*plan, er
 	}
 
 	if err != nil {
-		objLogger.Error(err.Error())
 		return nil, err
 	}
 
@@ -302,4 +322,49 @@ func parsearPlan(objData *s3.GetObjectOutput, objLogger *slog.Logger) (*plan, er
 	}
 
 	return plan, nil
+}
+
+func planYaExiste(ctx context.Context, client *s3.Client, newObj *s3.PutObjectInput) (bool, error) {
+	bucket, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: aws.String(BUCKET),
+	})
+
+	if err != nil {
+		slog.Error(err.Error())
+		return false, fmt.Errorf("Error interno al comparar con planes ya existentes.")
+	}
+
+	for _, existObj := range bucket.Contents {
+		existObjHead, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(BUCKET),
+			Key:    existObj.Key,
+		})
+
+		if err != nil {
+			slog.Error(err.Error(), "objKey", existObj.Key)
+			return false, fmt.Errorf("Error interno al comparar con planes ya existentes.")
+		}
+
+		meta := existObjHead.Metadata
+
+		carrera, okCarrera := meta["carrera"]
+		numero, okNum := meta["cuatri-numero"]
+		anio, okAnio := meta["cuatri-anio"]
+
+		if okCarrera && okNum && okAnio {
+			if newObj.Metadata["carrera"] == carrera &&
+				newObj.Metadata["cuatri-numero"] == numero &&
+				newObj.Metadata["cuatri-anio"] == anio {
+
+				slog.Info(
+					"Cache hit de plan.",
+					"objKey", existObj.Key,
+				)
+
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
