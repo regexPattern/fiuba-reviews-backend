@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,6 +25,16 @@ import (
 )
 
 const BUCKET string = "fiuba-reviews-scraper-siu"
+
+type plan struct {
+	Carrera string `json:"carrera"`
+	Cuatri  cuatri `json:"cuatri"`
+}
+
+type cuatri struct {
+	Numero int `json:"numero"`
+	Anio   int `json:"anio"`
+}
 
 func HandlerScraperSiu(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
@@ -48,55 +57,73 @@ func handlerGet(ctx context.Context, w http.ResponseWriter) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		slog.Error(err.Error())
+
 		w.WriteHeader(http.StatusInternalServerError)
+
+		_, err := w.Write([]byte("Error interno conectando con la base de datos."))
+		if err != nil {
+			slog.Error(err.Error())
+		}
+
 		return
 	}
 
-	clienteS3 := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(cfg)
 
-	bucket, err := clienteS3.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+	bucket, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket: aws.String(BUCKET),
 	})
 
 	if err != nil {
 		slog.Error(err.Error())
+
 		w.WriteHeader(http.StatusInternalServerError)
+
+		_, err := w.Write([]byte("Error interno obteniendo listado de la base de datos."))
+		if err != nil {
+			slog.Error(err.Error())
+		}
+
 		return
 	}
 
-	carreras := make([]string, 0, len(bucket.Contents))
-
-	rfc2047Dec := new(mime.WordDecoder)
+	planes := make([]*plan, 0, len(bucket.Contents))
 
 	for _, obj := range bucket.Contents {
-		archivo, err := clienteS3.GetObject(ctx, &s3.GetObjectInput{
+		objLogger := slog.Default().With("objKey", obj.Key)
+
+		objData, err := client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(BUCKET),
 			Key:    obj.Key,
 		})
 
 		if err != nil {
-			slog.Error(err.Error())
-			continue
+			objLogger.Error(
+				"Error obteniendo object del bucket.",
+				"err", err.Error(),
+			)
+
+			break
 		}
 
-		defer archivo.Body.Close()
+		defer objData.Body.Close()
 
-		meta := archivo.Metadata
-		carrera, ok := meta["carrera"]
+		plan, err := parsearPlan(objData, objLogger)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
 
-		slog.Debug(carrera)
-
-		if ok {
-			carrera, err = rfc2047Dec.DecodeHeader("=?UTF-8?Q?INGENIER=C3=83=C2=8DA_EN_INFORM=C3=83=C2=81TICA?=")
+			_, err := w.Write([]byte(err.Error()))
 			if err != nil {
 				slog.Error(err.Error())
 			}
-			slog.Debug(carrera)
-			carreras = append(carreras, carrera)
+
+			return
 		}
+
+		planes = append(planes, plan)
 	}
 
-	jsonData, err := json.Marshal(carreras)
+	planesJson, err := json.Marshal(planes)
 	if err != nil {
 		slog.Error(err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -105,7 +132,8 @@ func handlerGet(ctx context.Context, w http.ResponseWriter) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, err = w.Write(jsonData)
+
+	_, err = w.Write(planesJson)
 	if err != nil {
 		slog.Error(err.Error())
 	}
@@ -119,7 +147,7 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clienteS3 := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(cfg)
 
 	defer r.Body.Close()
 	contenidoSiu, err := io.ReadAll(r.Body)
@@ -142,8 +170,8 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	slog.Debug(
 		"Obtenidos metadatos del contenido del SIU.",
 		"carrera", meta.Carrera,
-		"cuatrimestre", meta.Cuatri.Numero,
-		"anio", meta.Cuatri.Anio,
+		"cuatri-numero", meta.Cuatri.Numero,
+		"cuatri-anio", meta.Cuatri.Anio,
 	)
 
 	if err != nil {
@@ -188,25 +216,28 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	// prefiero hacerlo manual.
 	//
 	// Más información: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html#UserMetadata
-	carrera = base64.StdEncoding.EncodeToString([]byte(meta.Carrera))
+	carreraB64 := base64.StdEncoding.EncodeToString([]byte(meta.Carrera))
 
 	slog.Info(fmt.Sprintf("Encodeado nombre de la carrera en base64: '%v'.", carrera))
 
-	_, err = clienteS3.PutObject(ctx, &s3.PutObjectInput{
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:          aws.String(BUCKET),
 		Key:             aws.String(objKey),
 		ContentType:     aws.String("application/json"),
 		ContentLanguage: aws.String("es"),
 		Metadata: map[string]string{
-			"carrera":      carrera,
-			"cuatrimestre": strconv.Itoa(meta.Cuatri.Numero),
-			"anio":         strconv.Itoa(meta.Cuatri.Anio),
+			"carrera":       carreraB64,
+			"cuatri-numero": strconv.Itoa(meta.Cuatri.Numero),
+			"cuatri-anio":   strconv.Itoa(meta.Cuatri.Anio),
 		},
 		Body: bytes.NewReader(objBody),
 	})
 
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(
+			"Error escribiendo los objects al bucket.",
+			"err", err.Error(),
+		)
 
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Error interno almacenando la información."))
@@ -221,4 +252,54 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	slog.Info(fmt.Sprintf("Escrito archivo '%v' con éxito.", objKey))
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func parsearPlan(objData *s3.GetObjectOutput, objLogger *slog.Logger) (*plan, error) {
+	var err error
+
+	meta := objData.Metadata
+
+	carreraB64, okCarrera := meta["carrera"]
+	numeroStr, okNum := meta["cuatri-numero"]
+	anioStr, okAnio := meta["cuatri-anio"]
+
+	if !okCarrera {
+		err = fmt.Errorf("Metadato 'carrera' no encontrado.")
+	} else if !okNum {
+		err = fmt.Errorf("Metadato 'cuatri-numero' no encontrado.")
+	} else if !okAnio {
+		err = fmt.Errorf("Metadato 'cuatri-anio' no encontrado.")
+	}
+
+	if err != nil {
+		objLogger.Error(err.Error())
+		return nil, err
+	}
+
+	carrera, errCarrera := base64.StdEncoding.DecodeString(carreraB64)
+	numero, errNum := strconv.Atoi(numeroStr)
+	anio, errAnio := strconv.Atoi(anioStr)
+
+	if errCarrera != nil {
+		err = fmt.Errorf("Error al deserializar 'carrera' como string.")
+	} else if errNum != nil {
+		err = fmt.Errorf("Error al deserializar 'cuatri-numero' como entero.")
+	} else if errAnio != nil {
+		err = fmt.Errorf("Error al deserializar 'cuatri-anio' como entero.")
+	}
+
+	if err != nil {
+		objLogger.Error(err.Error())
+		return nil, err
+	}
+
+	plan := &plan{
+		Carrera: string(carrera),
+		Cuatri: cuatri{
+			Numero: numero,
+			Anio:   anio,
+		},
+	}
+
+	return plan, nil
 }
