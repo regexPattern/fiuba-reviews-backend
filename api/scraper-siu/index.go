@@ -18,13 +18,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/regexPattern/fiuba-reviews/scraper_siu"
+	"github.com/regexPattern/fiuba-reviews/scrapersiu"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 )
 
-const BUCKET string = "fiuba-reviews-scraper-siu"
+const BUCKET string = "fiuba-reviews-siu"
 
 type plan struct {
 	Carrera string `json:"carrera"`
@@ -187,7 +187,7 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := scraper_siu.ObtenerMetaData(string(contenidoSiu))
+	meta, err := scrapersiu.ObtenerMetaData(string(contenidoSiu))
 
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -200,7 +200,7 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	materias := scraper_siu.ObtenerMaterias(meta.Cuatri.Contenido)
+	materias := scrapersiu.ObtenerMaterias(meta.Cuatri.Contenido)
 	objBody, err := json.Marshal(materias)
 
 	if err != nil {
