@@ -103,7 +103,7 @@ func obtenerCarrera(contenidoSiu string) (string, error) {
 		return "", fmt.Errorf("No se encontró la carrera.")
 	}
 
-	return strings.ToUpper(matches[1]), nil
+	return matches[1], nil
 }
 
 func obtenerCuatris(contenidoSiu string) []Cuatri {

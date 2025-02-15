@@ -14,7 +14,7 @@ func TestSeObtieneLaCarreraCorrectamente(t *testing.T) {
 Propuesta: Ingeniería en Informática
 		`)
 
-	assert.Equal(t, "INGENIERÍA EN INFORMÁTICA", carrera)
+	assert.Equal(t, "Ingeniería en Informática", carrera)
 }
 
 func TestSeRetornaUnErrorCuandoNoHayCarrera(t *testing.T) {
@@ -285,7 +285,7 @@ func TestOfertaDeComisionesInformatica2C2024(t *testing.T) {
 	meta, _ := ObtenerMetaData(string(contenidoSiu))
 	materias := ObtenerMaterias(string(contenidoSiu))
 
-	require.Equal(meta.Carrera, "INGENIERÍA EN INFORMÁTICA")
+	require.Equal(meta.Carrera, "Ingeniería en Informática")
 	require.Len(materias, 30)
 
 	matsCantCats := make(map[string]int, len(materias))
@@ -335,7 +335,7 @@ func TestOfertaDeComisionesQuimica2C2024(t *testing.T) {
 	meta, _ := ObtenerMetaData(string(contenidoSiu))
 	materias := ObtenerMaterias(string(contenidoSiu))
 
-	require.Equal(meta.Carrera, "INGENIERÍA QUÍMICA")
+	require.Equal(meta.Carrera, "Ingeniería Química")
 	require.Len(materias, 37)
 
 	matsCantCats := make(map[string]int, len(materias))
