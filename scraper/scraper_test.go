@@ -240,7 +240,7 @@ Docentes: Sin docentes
 	assert.Equal(t, 1, catedras[0].Codigo)
 }
 
-func TestSeAceptaCasingVariadoParaLosNombresDeLasMaterias(t *testing.T) {
+func TestSeCapitalizanLosNombresDeLasMaterias(t *testing.T) {
 	materias := ObtenerMaterias(`
 Actividad: álgebra lineal (CB002)
 		`)
@@ -249,7 +249,7 @@ Actividad: álgebra lineal (CB002)
 	require.Equal(t, "ÁLGEBRA LINEAL", materias[0].Nombre)
 }
 
-func TestSeAceptaCasingVariadoParaLosNombresDeLosDocentes(t *testing.T) {
+func TestSeCapitalizanLosNombresDeLosDocentes(t *testing.T) {
 	docentes := obtenerDocentesDeVariante(`
 Docentes: BUCHWALD martín ezequiel (Profesor/a Adjunto/a)
 		`)
