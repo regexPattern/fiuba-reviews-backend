@@ -2,8 +2,6 @@ package scrapersiu
 
 import (
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -278,19 +276,11 @@ Docentes: SARRIS CLAUDIA MONICA (Profesor/a Adjunto/a), GOMEZ CIAPPONI LAUTARO (
 	assert.Contains(catedras[0].Docentes, Docente{"GOMEZ CIAPPONI LAUTARO", "AYUDANTE 1RO"})
 }
 
-func leerArchivoTestOfertaDeComisiones(filename string) string {
-	_, testFilename, _, _ := runtime.Caller(0)
-	testDir := filepath.Dir(testFilename)
-	fullFilepath := filepath.Join(testDir, "testdata", filename)
-	contenidoSiu, _ := os.ReadFile(fullFilepath)
-	return string(contenidoSiu)
-}
-
 func TestOfertaDeComisionesInformatica2C2024(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	contenidoSiu := leerArchivoTestOfertaDeComisiones("informatica-28-12-2024.txt")
+	contenidoSiu, _ := os.ReadFile("./testdata/ingenieria-en-informatica-2C-2024.txt")
 
 	meta, _ := ObtenerMetaData(string(contenidoSiu))
 	materias := ObtenerMaterias(string(contenidoSiu))
@@ -340,7 +330,7 @@ func TestOfertaDeComisionesQuimica2C2024(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	contenidoSiu := leerArchivoTestOfertaDeComisiones("quimica-28-12-2024.txt")
+	contenidoSiu, _ := os.ReadFile("./testdata/ingenieria-quimica-2C-2024.txt")
 
 	meta, _ := ObtenerMetaData(string(contenidoSiu))
 	materias := ObtenerMaterias(string(contenidoSiu))
