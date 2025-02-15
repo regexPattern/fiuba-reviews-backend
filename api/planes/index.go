@@ -36,15 +36,13 @@ type cuatri struct {
 	Anio   int `json:"anio"`
 }
 
-func init() {
+func HandlerScraperSiu(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     slog.LevelInfo,
 	})))
-}
-
-func HandlerScraperSiu(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
 
 	switch r.Method {
 	case "GET":
