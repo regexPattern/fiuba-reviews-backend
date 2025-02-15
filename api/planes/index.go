@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/regexPattern/fiuba-reviews/scrapersiu"
+	"github.com/regexPattern/fiuba-reviews/scraper"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -187,7 +187,7 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := scrapersiu.ObtenerMetaData(string(contenidoSiu))
+	meta, err := scraper.ObtenerMetaData(string(contenidoSiu))
 
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -200,7 +200,7 @@ func handlerPost(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	materias := scrapersiu.ObtenerMaterias(meta.Cuatri.Contenido)
+	materias := scraper.ObtenerMaterias(meta.Cuatri.Contenido)
 	objBody, err := json.Marshal(materias)
 
 	if err != nil {

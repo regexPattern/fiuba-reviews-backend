@@ -1,2 +1,2 @@
-scrapersiu/scrapersiu_test.go
-scrapersiu/testdata/
+scraper/scraper_test.go
+scraper/testdata/
